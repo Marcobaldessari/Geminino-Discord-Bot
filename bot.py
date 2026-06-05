@@ -1,5 +1,4 @@
 import logging
-import re
 import discord
 
 from config import Config
@@ -17,10 +16,6 @@ intents.reactions = True
 
 bot = discord.Client(intents=intents)
 
-# Keywords representing the name and nicknames of the bot (case-insensitive with word boundaries)
-TRIGGERS = [rf"\b{re.escape(t)}\b" for t in Config.BOT_TRIGGERS]
-TRIGGER_PATTERN = re.compile("|".join(TRIGGERS), re.IGNORECASE)
-
 
 @bot.event
 async def on_ready():
@@ -34,8 +29,8 @@ async def on_message(message: discord.Message):
         return
 
     # Check if the message contains any of the trigger keywords
-    mentioned = bot.user and f"<@{bot.user.id}>" in message.content
-    if not TRIGGER_PATTERN.search(message.content) and not mentioned:
+    uid = bot.user.id
+    if f"<@{uid}>" not in message.content and f"<@!{uid}>" not in message.content:
         return
 
     try:
