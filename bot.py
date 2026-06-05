@@ -34,7 +34,7 @@ async def on_message(message: discord.Message):
         return
 
     # Check if the message contains any of the trigger keywords
-    if not TRIGGER_PATTERN.search(message.content):
+    if not TRIGGER_PATTERN.search(message.content) and bot.user not in message.mentions:
         return
 
     try:
