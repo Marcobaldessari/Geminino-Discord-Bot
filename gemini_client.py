@@ -1,5 +1,7 @@
 import asyncio
 import concurrent.futures
+import re
+
 import discord
 from google import genai
 from google.genai import types
@@ -11,6 +13,10 @@ _client = genai.Client(api_key=Config.GEMINI_API_KEY)
 _executor = concurrent.futures.ThreadPoolExecutor(max_workers=4)
 
 _DISCORD_LIMIT = 2000
+_MAX_SOURCES = 3
+_TRAILING_SOURCES_RE = re.compile(
+    r"\n+\**Sources?:?\**\s*\n(?:[-•*].*\n?)+\s*$", re.IGNORECASE
+)
 
 
 def _format_context(context_messages: list[discord.Message], target: discord.Message) -> str:
@@ -25,10 +31,14 @@ def _format_context(context_messages: list[discord.Message], target: discord.Mes
 
 def _extract_sources(response) -> list[str]:
     sources = []
+    seen_uris = set()
     try:
         chunks = response.candidates[0].grounding_metadata.grounding_chunks
         for chunk in chunks:
-            if chunk.web and chunk.web.uri:
+            if len(sources) >= _MAX_SOURCES:
+                break
+            if chunk.web and chunk.web.uri and chunk.web.uri not in seen_uris:
+                seen_uris.add(chunk.web.uri)
                 title = chunk.web.title or chunk.web.uri
                 sources.append(f"• [{title}](<{chunk.web.uri}>)")
     except (AttributeError, IndexError, TypeError):
@@ -66,7 +76,7 @@ def _call_gemini(context: str) -> list[str]:
         ),
     )
 
-    text = response.text or ""
+    text = _TRAILING_SOURCES_RE.sub("", response.text or "").rstrip()
     sources = _extract_sources(response)
 
     if sources:
