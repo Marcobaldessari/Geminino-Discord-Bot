@@ -40,19 +40,13 @@ async def on_message(message: discord.Message):
                 context.append(msg)
             context.reverse()
 
-            chunks = await generate_response(message, context)
+            reply_text = await generate_response(message, context)
 
-        first = True
-        for chunk in chunks:
-            if first:
-                await message.reply(chunk)
-                first = False
-            else:
-                await message.channel.send(chunk)
-            log.info(
-                "Bot said (message %d, channel %d):\n%s",
-                message.id, message.channel.id, chunk,
-            )
+        await message.reply(reply_text)
+        log.info(
+            "Bot said (message %d, channel %d):\n%s",
+            message.id, message.channel.id, reply_text,
+        )
 
     except Exception:
         log.exception("Failed to generate or send reply for message %d", message.id)

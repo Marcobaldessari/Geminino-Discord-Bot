@@ -13,10 +13,19 @@ _client = genai.Client(api_key=Config.GEMINI_API_KEY)
 _executor = concurrent.futures.ThreadPoolExecutor(max_workers=4)
 
 _DISCORD_LIMIT = 2000
+_TRUNCATION_MARKER = "…"
 _MAX_SOURCES = 3
 _TRAILING_SOURCES_RE = re.compile(
     r"\n+\**Sources?:?\**\s*\n(?:[-•*].*\n?)+\s*$", re.IGNORECASE
 )
+_SOURCES_REQUEST_RE = re.compile(
+    r"\b(sources?|links?|references?|citations?|fonti?|riferiment\w*|collegament\w*|citazion\w*)\b",
+    re.IGNORECASE,
+)
+
+
+def _wants_sources(text: str) -> bool:
+    return bool(_SOURCES_REQUEST_RE.search(text))
 
 
 def _format_context(context_messages: list[discord.Message], target: discord.Message) -> str:
@@ -46,22 +55,17 @@ def _extract_sources(response) -> list[str]:
     return sources
 
 
-def _split_message(text: str, limit: int = _DISCORD_LIMIT) -> list[str]:
+def _truncate_message(text: str, limit: int = _DISCORD_LIMIT) -> str:
     if len(text) <= limit:
-        return [text]
-    chunks = []
-    while len(text) > limit:
-        cutoff = text.rfind("\n", 0, limit)
-        if cutoff == -1:
-            cutoff = limit
-        chunks.append(text[:cutoff])
-        text = text[cutoff + 1:]
-    if text:
-        chunks.append(text)
-    return chunks
+        return text
+    cutoff = limit - len(_TRUNCATION_MARKER)
+    space = text.rfind(" ", 0, cutoff)
+    if space != -1:
+        cutoff = space
+    return text[:cutoff].rstrip() + _TRUNCATION_MARKER
 
 
-def _call_gemini(context: str) -> list[str]:
+def _call_gemini(context: str, include_sources: bool) -> str:
     prompt = (
         "Here is the recent conversation:\n\n"
         f"{context}\n\n"
@@ -77,21 +81,20 @@ def _call_gemini(context: str) -> list[str]:
     )
 
     text = _TRAILING_SOURCES_RE.sub("", response.text or "").rstrip()
-    sources = _extract_sources(response)
 
-    if sources:
-        sources_block = "\n\n**Sources:**\n" + "\n".join(sources)
-        combined = text + sources_block
-    else:
-        combined = text
+    if include_sources:
+        sources = _extract_sources(response)
+        if sources:
+            text += "\n\n**Sources:**\n" + "\n".join(sources)
 
-    return _split_message(combined)
+    return _truncate_message(text)
 
 
 async def generate_response(
     target: discord.Message,
     context_messages: list[discord.Message],
-) -> list[str]:
+) -> str:
     context = _format_context(context_messages, target)
+    include_sources = _wants_sources(target.content)
     loop = asyncio.get_running_loop()
-    return await loop.run_in_executor(_executor, _call_gemini, context)
+    return await loop.run_in_executor(_executor, _call_gemini, context, include_sources)
